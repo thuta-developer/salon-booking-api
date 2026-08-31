@@ -1,11 +1,17 @@
 import uuid
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, has_permission
+from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.schemas.rbac import RoleCreate, RoleUpdate, RoleResponse, RoleAssignPermissions
+from app.schemas.rbac import (
+    RoleCreate,
+    RoleResponse,
+    RoleAssignPermissions,
+    UserAssignRoles,
+)
 from app.schemas.user import UserResponse
 from app.services.role_service import RoleService
 
@@ -75,10 +81,13 @@ async def assign_permissions_to_role(
 )
 async def assign_roles_to_user(
     user_id: uuid.UUID,
-    role_ids: List[uuid.UUID],
+    body: UserAssignRoles,
+    current_user: User = Depends(has_permission("user:update")),
     service: RoleService = Depends(get_role_service),
 ):
-    return await service.assign_roles_to_user(user_id, role_ids)
+    return await service.assign_roles_to_user(
+        user_id, body.role_ids, acting_user=current_user
+    )
 
 
 @router.delete(

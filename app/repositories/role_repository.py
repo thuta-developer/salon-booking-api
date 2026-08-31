@@ -17,6 +17,12 @@ class RoleRepository(BaseRepository[Role]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_name_ci(self, name: str) -> Optional[Role]:
+        """Case-insensitive duplicate check — 'Admin' / 'admin' / 'ADMIN' ခွဲထွက်မဖြစ်ရန်"""
+        stmt = select(Role).where(func.lower(Role.name) == name.lower())
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_id_with_permissions(self, role_id: uuid.UUID) -> Optional[Role]:
         stmt = select(Role).options(selectinload(Role.permissions)).where(Role.id == role_id)
         result = await self.db.execute(stmt)

@@ -33,10 +33,19 @@ class UserRepository(BaseRepository[User]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def exists_by_email_or_phone(self, email: str, phone_number: str) -> bool:
-        stmt = select(func.count(User.id)).where(
-            or_(User.email == email, User.phone_number == phone_number)
-        )
+    async def exists_by_email_or_phone(
+        self, email: str, phone_number: Optional[str]
+    ) -> bool:
+        # CRITICAL: phone_number=None ဖြစ်လျှင် `OR phone_number IS NULL` မဖြစ်စေရန်
+        # email အတွက်သာ စစ်သည်။ (Original code က NULL phone ရှိသော user ရှိသလောက်
+        #  register အကုန် "Phone number already exists" ဟု မှားယွင်းစွာ return လုပ်)
+        if phone_number:
+            stmt = select(func.count(User.id)).where(
+                or_(User.email == email, User.phone_number == phone_number)
+            )
+        else:
+            stmt = select(func.count(User.id)).where(User.email == email)
+
         result = await self.db.execute(stmt)
         return result.scalar_one() > 0
 

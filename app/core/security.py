@@ -1,24 +1,41 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password: str) -> str:
+    """
+    Password ကို Bcrypt ဖြင့် Hash လုပ်ပေးသည်
+    (bcrypt 72-byte limit ကို explicit ကိုင်တွယ်ထားသည်)
+    """
+    return bcrypt.hashpw(
+        password.encode("utf-8")[:72],
+        bcrypt.gensalt(rounds=12),
+    ).decode("utf-8")
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Plain Password နှင့် Hashed Password ကို တိုက်ဆိုင်စစ်ဆေးသည်
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8")[:72],
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
+        return False
 
-def get_password_hash(password: str) -> str:
-    """
-    Password ကို Bcrypt ဖြင့် Hash လုပ်ပေးသည်
-    """
-    return pwd_context.hash(password)
+
+# User မရှိသည့်အခါ password နှိုင်းယှဉ် Timing Attack (User Enumeration) ကို
+# ကာကွယ်ရန် dummy bcrypt hash တစ်ခုစီ သုံးပါသည်။
+_DUMMY_PASSWORD = "dummy-password-for-timing-attack"
+DUMMY_BCRYPT_HASH = get_password_hash(_DUMMY_PASSWORD)
 
 
 def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None) -> str:
@@ -32,6 +49,7 @@ def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None)
 
     to_encode = {
         "exp": expire,
+        "iat": datetime.now(timezone.utc),  # Issued-At — token ထုတ်ချိန် မှတ်တမ်း
         "sub": str(subject),
         "type": "access",
         "jti": str(uuid.uuid4()),  # JWT ID - logout/revocation အတွက် လိုအပ်သည်
@@ -51,6 +69,7 @@ def create_refresh_token(subject: Any, expires_delta: Optional[timedelta] = None
 
     to_encode = {
         "exp": expire,
+        "iat": datetime.now(timezone.utc),  # Issued-At — token ထုတ်ချိန် မှတ်တမ်း
         "sub": str(subject),
         "type": "refresh",
         "jti": str(uuid.uuid4()),  # JWT ID - logout/revocation အတွက် လိုအပ်သည်

@@ -4,15 +4,18 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, List
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.redis_client import get_redis_client
 from app.core.security import (
     get_password_hash,
     verify_password,
     create_access_token,
     create_refresh_token,
     decode_token,
+    DUMMY_BCRYPT_HASH,
 )
 from app.core.token_blacklist import is_token_revoked, revoke_token
 from app.models.rbac import Role
@@ -32,6 +35,39 @@ class UserService(BaseService[User, UserRepository]):
         self.user_repository = user_repository
         self.db = user_repository.db
 
+    # ------------------------------------------------------------------
+    # Login brute-force protection helpers (Redis backed, fail-open on error)
+    # ------------------------------------------------------------------
+    def _attempts_key(self, email: str, client_ip: str = "") -> str:
+        # IP + email ပေါင်း key — attacker က victim ၏ account ကို ရည်ရွယ်ချက်ရှိရှိ
+        # lock လုပ်ရန် (lockout DoS) မလွယ်စေရန်
+        return f"login-attempt:{email.lower()}:{client_ip or 'unknown'}"
+
+    async def _is_login_locked(self, email: str, client_ip: str = "") -> bool:
+        try:
+            redis = get_redis_client()
+            count = await redis.get(self._attempts_key(email, client_ip))
+            return int(count or 0) >= settings.LOGIN_MAX_ATTEMPTS
+        except Exception:
+            return False
+
+    async def _record_failed_attempt(self, email: str, client_ip: str = "") -> None:
+        try:
+            redis = get_redis_client()
+            key = self._attempts_key(email, client_ip)
+            count = await redis.incr(key)
+            if count == 1:
+                await redis.expire(key, settings.LOGIN_LOCKOUT_MINUTES * 60)
+        except Exception:
+            return None
+
+    async def _reset_failed_attempts(self, email: str, client_ip: str = "") -> None:
+        try:
+            redis = get_redis_client()
+            await redis.delete(self._attempts_key(email, client_ip))
+        except Exception:
+            return None
+
     async def register_user(self, user_in: UserCreate) -> UserResponse:
         if user_in.password != user_in.confirm_password:
             raise HTTPException(
@@ -39,10 +75,11 @@ class UserService(BaseService[User, UserRepository]):
                 detail="Passwords do not match",
             )
 
-        if await self.user_repository.exists_by_email_or_phone(
-            user_in.email, user_in.phone_number
-        ):
-            if await self.user_repository.get_by_email(user_in.email):
+        email = user_in.email.strip().lower()
+        phone = user_in.phone_number.strip() if user_in.phone_number else None
+
+        if await self.user_repository.exists_by_email_or_phone(email, phone):
+            if await self.user_repository.get_by_email(email):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email already exists",
@@ -53,6 +90,8 @@ class UserService(BaseService[User, UserRepository]):
             )
 
         user_data = user_in.model_dump(exclude={"password", "confirm_password"})
+        user_data["email"] = email
+        user_data["phone_number"] = phone
         user_data["hashed_password"] = get_password_hash(user_in.password)
 
         role_stmt = select(Role).where(Role.name == DEFAULT_REGISTER_ROLE)
@@ -63,7 +102,17 @@ class UserService(BaseService[User, UserRepository]):
         if customer_role:
             user.roles.append(customer_role)
         self.db.add(user)
-        await self.db.commit()
+
+        # Concurrent registration အတွက် unique constraint violation ကို
+        # clean 400 အဖြစ် ပြန်ပေးရန် (500 crash မဖြစ်စေရန်)
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email or phone number already exists",
+            )
 
         role_names = [customer_role.name] if customer_role else []
 
@@ -84,9 +133,31 @@ class UserService(BaseService[User, UserRepository]):
 
         return UserResponse(**response_dict)
 
-    async def login_user(self, email: str, password: str) -> Token:
+    async def login_user(
+        self,
+        email: str,
+        password: str,
+        client_ip: Optional[str] = None,
+    ) -> Token:
+        email = (email or "").strip().lower()
+
+        if await self._is_login_locked(email, client_ip or ""):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again later.",
+                headers={"Retry-After": str(settings.LOGIN_LOCKOUT_MINUTES * 60)},
+            )
+
         user = await self.user_repository.get_by_email(email)
-        if not user or not verify_password(password, user.hashed_password):
+
+        # Timing Attack (User Enumeration) ကာကွယ်ရန် user မရှိလျှင်လည်း
+        # dummy hash ကို အမြဲ verify လုပ်သည်။
+        hash_to_check = user.hashed_password if user else DUMMY_BCRYPT_HASH
+        password_ok = verify_password(password, hash_to_check)
+
+        if not user or not password_ok:
+            if user:
+                await self._record_failed_attempt(email, client_ip or "")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -97,6 +168,8 @@ class UserService(BaseService[User, UserRepository]):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user account",
             )
+
+        await self._reset_failed_attempts(email, client_ip or "")
 
         user.last_login = datetime.now(timezone.utc)
         await self.db.commit()
@@ -219,7 +292,12 @@ class UserService(BaseService[User, UserRepository]):
             )
         return UserResponse.model_validate(user)
 
-    async def update_user(self, user_id: uuid.UUID, user_in: UserUpdate) -> UserResponse:
+    async def update_user(
+        self,
+        user_id: uuid.UUID,
+        user_in: UserUpdate,
+        acting_user: Optional[User] = None,
+    ) -> UserResponse:
         stmt = (
             select(User)
             .options(selectinload(User.roles))
@@ -232,7 +310,32 @@ class UserService(BaseService[User, UserRepository]):
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
+        # ---- Authorization Guards ----
         update_data = user_in.model_dump(exclude_unset=True)
+
+        if acting_user is not None:
+            if user.is_superuser and not acting_user.is_superuser:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are not allowed to modify a superuser account",
+                )
+            # Privilege escalation ကာကွယ်ရန် — non-superuser က account_type /
+            # is_verified (email verify bypass / staff promotion) ကို မပြောင်းနိုင်ပါ
+            if not acting_user.is_superuser:
+                privileged_fields = {"is_verified", "account_type"}
+                if privileged_fields & update_data.keys():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Only a superuser can change account_type or verification status",
+                    )
+            if acting_user.id == user.id and update_data.get("is_active") is False:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You cannot deactivate your own account",
+                )
+
+        if "phone_number" in update_data and update_data["phone_number"]:
+            update_data["phone_number"] = update_data["phone_number"].strip()
         if "password" in update_data and update_data["password"]:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 
@@ -241,7 +344,14 @@ class UserService(BaseService[User, UserRepository]):
 
         user.updated_at = datetime.now(timezone.utc)
         self.db.add(user)
-        self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email or phone number already in use",
+            )
 
         role_names = [role.name for role in user.roles] if user.roles else []
 
@@ -260,19 +370,46 @@ class UserService(BaseService[User, UserRepository]):
             roles=role_names
         )
 
-    async def delete_user(self, user_id: uuid.UUID) -> dict:
-        success = await self.user_repository.hard_delete(user_id)
-        if not success:
+    async def _guard_target_user(
+        self, target: User, acting_user: Optional[User], action: str
+    ) -> None:
+        """Deletion/deactivation များတွင် superuser နှင့် self ‌ကို ကာကွယ်ပေးသည်"""
+        if acting_user is None:
+            return
+        if acting_user.id == target.id:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You cannot {action} your own account",
+            )
+        if target.is_superuser and not acting_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You are not allowed to {action} a superuser account",
             )
 
-    async def soft_delete_user(self, user_id: uuid.UUID) -> dict:
-        success = await self.user_repository.soft_delete(user_id)
-        if not success:
+    async def delete_user(
+        self, user_id: uuid.UUID, acting_user: Optional[User] = None
+    ) -> dict:
+        user = await self.user_repository.get_by_id(user_id)
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
+        await self._guard_target_user(user, acting_user, "delete")
+        await self.user_repository.hard_delete(user_id)
+        return {"message": "User hard deleted successfully"}
+
+    async def soft_delete_user(
+        self, user_id: uuid.UUID, acting_user: Optional[User] = None
+    ) -> dict:
+        user = await self.user_repository.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
+        await self._guard_target_user(user, acting_user, "deactivate")
+        await self.user_repository.soft_delete(user_id)
+        return {"message": "User soft deleted successfully"}
 
 
 

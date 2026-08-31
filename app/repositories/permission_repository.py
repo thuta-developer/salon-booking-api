@@ -15,6 +15,12 @@ class PermissionRepository(BaseRepository[Permission]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_name_ci(self, name: str) -> Optional[Permission]:
+        """Case-insensitive duplicate check — 'User:Read' / 'user:read' ခွဲထွက်မဖြစ်ရန်"""
+        stmt = select(self.model).where(func.lower(self.model.name) == name.lower())
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_ids(self, permission_ids: List[uuid.UUID]) -> List[Permission]:
         if not permission_ids:
             return []

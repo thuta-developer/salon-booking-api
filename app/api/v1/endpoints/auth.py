@@ -41,13 +41,17 @@ async def login(
             )
 
     service = UserService(UserRepository(db))
-    return await service.login_user(login_data.email, login_data.password)
+    client_ip = request.client.host if request.client else None
+    return await service.login_user(
+        login_data.email, login_data.password, client_ip=client_ip
+    )
 
 
-@router.post("/refresh", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/refresh", response_model=Token, status_code=status.HTTP_200_OK)
 async def refresh_token(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     service = UserService(UserRepository(db))
-    return await service.refresh_access_token(body.refresh_token)
+    refresh_result = await service.refresh_access_token(body.refresh_token)
+    return Token(**refresh_result)
 
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)

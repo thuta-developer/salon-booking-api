@@ -1,9 +1,10 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, has_permission
+from app.models.user import User
 from app.schemas.common import PaginatedResponse
 from app.schemas.user import UserResponse, UserUpdate, UserWithRolesResponse
 from app.services.user_service import UserService
@@ -48,42 +49,56 @@ async def get_user_detail(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     Get Single User Detail by ID
     """
     service = UserService(UserRepository(db))
-    return await service.get_user_with_roles_by_id(user_id)
+    user = await service.get_user_with_roles_by_id(user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
 
 
 @router.put(
     "/{user_id}",
     response_model=UserResponse,
-    dependencies=[Depends(has_permission("user:update"))],
 )
 async def update_user(
-    user_id: uuid.UUID, user_in: UserUpdate, db: AsyncSession = Depends(get_db)
+    user_id: uuid.UUID,
+    user_in: UserUpdate,
+    current_user: User = Depends(has_permission("user:update")),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Update User Information
     """
     service = UserService(UserRepository(db))
-    return await service.update_user(user_id, user_in)
+    return await service.update_user(user_id, user_in, acting_user=current_user)
 
 
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(has_permission("user:delete"))],
-    
 )
-async def delete_user(user_id: uuid.UUID, hard_delete: bool = Query(False, description="Permanently delete (default: soft delete)"), db: AsyncSession = Depends(get_db)):
+async def delete_user(
+    user_id: uuid.UUID,
+    hard_delete: bool = Query(False, description="Permanently delete (default: soft delete)"),
+    current_user: User = Depends(has_permission("user:delete")),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Delete User by ID
     """
     service = UserService(UserRepository(db))
     if hard_delete:
-        await service.delete_user(user_id)
-    else:
-        await service.soft_delete_user(user_id)
+        # Irreversible operation — superuser သာ လုပ်နိုင်သည်
+        if not current_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only a superuser can hard-delete a user",
+            )
+        await service.delete_user(user_id, acting_user=current_user)
+        return {"message": "User hard deleted successfully"}
 
-    return {
-        "message": f"User {'hard ' if hard_delete else 'soft '}deleted successfully"
-    }
+    await service.soft_delete_user(user_id, acting_user=current_user)
+    return {"message": "User soft deleted successfully"}
 
     

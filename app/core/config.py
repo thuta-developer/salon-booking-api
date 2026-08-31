@@ -1,5 +1,5 @@
-from typing import List
-from pydantic import computed_field, SecretStr,model_validator,field_validator
+from typing import List, Optional
+from pydantic import SecretStr, model_validator, field_validator
 import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +34,18 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 1440
+
+    # Login Brute-force Protection
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
+
+    # Set True only when the API is behind a trusted reverse-proxy / load balancer
+    # (see /health, rate limiter X-Forwarded-For handling). Never enable when
+    # clients can reach the API directly, otherwise the header can be spoofed.
+    TRUST_PROXY_HEADERS: bool = False
+
+    # Optional error tracking
+    SENTRY_DSN: Optional[str] = None
 
     # Computed Property for Async PostgreSQL Connection URI
     @property
@@ -83,6 +95,9 @@ class Settings(BaseSettings):
 
         if self.DEBUG:
             raise ValueError("DEBUG must be false in production")
+
+        if self.SECRET_KEY == "change_this_to_a_very_secret_and_long_random_string_in_production":
+            raise ValueError("SECRET_KEY must be changed to a unique random value in production")
 
         if "*" in self.allowed_origins:
             raise ValueError("ALLOWED_ORIGINS cannot contain '*' in production")

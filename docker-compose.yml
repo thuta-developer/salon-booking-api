@@ -44,7 +44,10 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT}
-      REDIS_URL: ${REDIS_URL}
+      # .env ထဲက localhost URL က container ထဲမှာ မှားရွေးမှု ဖြစ်စေသည်
+      # (API container ရဲ့ localhost မှာ Redis မရှိ) — compose network အတွင်းမှာ
+      # service DNS နာမည် `redis` ကိုပဲ သုံးရမည်။
+      REDIS_URL: redis://redis:6379/0
     ports:
       - 8000:8000
     depends_on:

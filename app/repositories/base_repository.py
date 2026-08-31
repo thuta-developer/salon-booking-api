@@ -80,7 +80,8 @@ class BaseRepository(Generic[ModelType]):
     async def update(self, db_obj: ModelType, update_data: dict[str, Any]) -> ModelType:
         try:
             for field, value in update_data.items():
-                if hasattr(db_obj, field) and value is not None:
+                # None value ကိုလည်း set လုပ်နိုင်သည် (field ကို clear လုပ်ရန်)
+                if hasattr(db_obj, field):
                     setattr(db_obj, field, value)
             self.db.add(db_obj)
             await self.db.commit()

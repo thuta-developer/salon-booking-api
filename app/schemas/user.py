@@ -5,6 +5,22 @@ from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from app.schemas.rbac import RoleResponse
 
 
+PASSWORD_MIN_LENGTH = 8
+# bcrypt ၏ Maximum Input Length (72 bytes) — ထက်ပိုကြီးသော password ကို ခွင့်မပြုပါ
+PASSWORD_MAX_LENGTH = 72
+
+
+def _validate_password(value: str) -> str:
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise ValueError(
+            f"Password must be at least {PASSWORD_MIN_LENGTH} characters long"
+        )
+    if len(value) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"Password must not exceed {PASSWORD_MAX_LENGTH} characters"
+        )
+    return value
+
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -12,10 +28,26 @@ class UserBase(BaseModel):
     phone_number: Optional[str] = None
     account_type: str = "customer"
 
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        # Duplicate accounts (case-difference) မဖြစ်စေရန် normalize လုပ်သည်
+        return v.strip().lower()
+
 
 class UserCreate(UserBase):
     password: str
     confirm_password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
+
+    @field_validator("confirm_password")
+    @classmethod
+    def validate_confirm_password(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class UserUpdate(BaseModel):
@@ -25,6 +57,13 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_verified: Optional[bool] = None
     password: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        return _validate_password(v)
 
 
 class UserWithRolesResponse(BaseModel):

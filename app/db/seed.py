@@ -186,7 +186,7 @@ async def create_super_admin(
 # 5. CLI ARGUMENT PARSER
 # ==========================================
 def main():
-    parser = argparse.ArgumentParser(description="BusGo API Seeder CLI Utility")
+    parser = argparse.ArgumentParser(description="Salon API Seeder CLI Utility")
     subparsers = parser.add_subparsers(dest="command", help="Available Commands")
 
     # Command: rbac

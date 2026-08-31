@@ -2,6 +2,7 @@ import uuid
 import math
 from typing import Optional
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.permission_repository import PermissionRepository
@@ -14,13 +15,27 @@ class PermissionService:
         self.perm_repo = PermissionRepository(db)
 
     async def create_permission(self, perm_in: PermissionCreate) -> PermissionResponse:
-        existing = await self.perm_repo.get_by_name(perm_in.name)
+        perm_data = perm_in.model_dump()
+        # Leading/trailing whitespace + case-insensitive duplicate ကာကွယ်ရန်
+        perm_data["name"] = perm_data["name"].strip()
+        if not perm_data["name"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Permission name is required"
+            )
+
+        existing = await self.perm_repo.get_by_name_ci(perm_data["name"])
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Permission '{perm_in.name}' already exists",
+                detail=f"Permission '{perm_data['name']}' already exists",
             )
-        perm = await self.perm_repo.create(perm_in.model_dump())
+        try:
+            perm = await self.perm_repo.create(perm_data)
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Permission '{perm_data['name']}' already exists",
+            )
         return PermissionResponse.model_validate(perm)
 
     async def get_permissions_list(
@@ -42,7 +57,28 @@ class PermissionService:
         if not perm:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permission not found")
 
-        updated = await self.perm_repo.update(perm, perm_in.model_dump(exclude_unset=True))
+        update_data = perm_in.model_dump(exclude_unset=True)
+        if "name" in update_data and update_data["name"]:
+            new_name = update_data["name"].strip()
+            if not new_name:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Permission name is required"
+                )
+            update_data["name"] = new_name
+            duplicate = await self.perm_repo.get_by_name_ci(new_name)
+            if duplicate and duplicate.id != perm.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Permission name already exists",
+                )
+
+        try:
+            updated = await self.perm_repo.update(perm, update_data)
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Permission name already exists",
+            )
         return PermissionResponse.model_validate(updated)
 
     async def delete_permission(self, perm_id: uuid.UUID) -> dict:
