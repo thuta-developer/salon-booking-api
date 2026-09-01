@@ -26,6 +26,7 @@ CRUD_RESOURCES = [
     "user",
     "role",
     "permission",
+    "shop",
 ]
 
 

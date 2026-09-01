@@ -4,7 +4,7 @@ from app.api.v1.endpoints import (
     auth,
     users,
     permissions,
-    roles
+    roles,
 )
 
 

@@ -5,7 +5,7 @@ from typing import Optional, Dict, List
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload,noload
 
 from app.core.config import settings
 from app.core.redis_client import get_redis_client
@@ -94,7 +94,7 @@ class UserService(BaseService[User, UserRepository]):
         user_data["phone_number"] = phone
         user_data["hashed_password"] = get_password_hash(user_in.password)
 
-        role_stmt = select(Role).where(Role.name == DEFAULT_REGISTER_ROLE)
+        role_stmt = select(Role).options(noload(Role.permissions)).where(Role.name == DEFAULT_REGISTER_ROLE)
         role_result = await self.db.execute(role_stmt)
         customer_role = role_result.scalar_one_or_none()
 
@@ -336,9 +336,7 @@ class UserService(BaseService[User, UserRepository]):
 
         if "phone_number" in update_data and update_data["phone_number"]:
             update_data["phone_number"] = update_data["phone_number"].strip()
-        if "password" in update_data and update_data["password"]:
-            update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
-
+       
         for field, value in update_data.items():
             setattr(user, field, value)
 

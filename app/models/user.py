@@ -7,6 +7,9 @@ from app.models.base import BaseModel
 from app.models.rbac import Role
 from app.models.associations import user_roles
 
+if TYPE_CHECKING:
+    from app.models.shop import Shop
+
 
 class User(BaseModel):
     __tablename__ = "users"
@@ -45,6 +48,11 @@ class User(BaseModel):
     roles: Mapped[List[Role]] = relationship(
         secondary=user_roles,
         lazy="selectin"
+    )
+    shops: Mapped[List["Shop"]] = relationship(
+        "Shop",
+        back_populates="owner",
+        lazy="selectin",
     )
 
 

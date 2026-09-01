@@ -56,14 +56,7 @@ class UserUpdate(BaseModel):
     account_type: Optional[str] = None
     is_active: Optional[bool] = None
     is_verified: Optional[bool] = None
-    password: Optional[str] = None
 
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v == "":
-            return v
-        return _validate_password(v)
 
 
 class UserWithRolesResponse(BaseModel):
@@ -71,6 +64,7 @@ class UserWithRolesResponse(BaseModel):
     full_name: str
     email: EmailStr
     phone_number: Optional[str] = None
+    account_type: str
     is_active: bool
     is_superuser: bool = False
     created_at: datetime
