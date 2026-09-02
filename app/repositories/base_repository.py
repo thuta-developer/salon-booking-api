@@ -85,6 +85,7 @@ class BaseRepository(Generic[ModelType]):
                     setattr(db_obj, field, value)
             self.db.add(db_obj)
             await self.db.commit()
+            await self.db.refresh(db_obj)
             return db_obj
         except Exception as e:
             await self.db.rollback()
