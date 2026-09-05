@@ -1,0 +1,1 @@
+"""Feature modules (modular monolith)."""

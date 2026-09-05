@@ -32,7 +32,7 @@ curl http://localhost:8000/health   # {"status": "ok"} ရရင် အဆင်
 | Super Admin | `admin@gmail.com` | `Admin@12345` |
 | Customer | `postman@test.com` | `PostmanTest123` |
 
-> Password reset လုပ်ချင်ရင်: `python3 -m app.db.seed` (သို့) DB ထဲ တိုက်ရိုက် update လုပ်ပါ။
+> Password reset လုပ်ချင်ရင်: `python3 scripts/seed.py` (သို့) DB ထဲ တိုက်ရိုက် update လုပ်ပါ။
 
 ## 5. Security Fixes များကို စမ်းကြည့်ရန် (Negative Tests folder)
 - **Wrong password** → 401 (timing-attack ကာကွယ်ထားသဖြင့် user မရှိသလောက် တုန့်ပြန်မှု အချိန် တူညီမှုရှိသည်)

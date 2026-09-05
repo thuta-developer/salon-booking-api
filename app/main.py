@@ -5,9 +5,14 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.v1.router import router as v1_router
+from app.api.router import router as v1_router
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
+from app.core.logging import setup_logging
 from app.core.rate_limit import RateLimitMiddleware
+
+# Configure application logging first
+setup_logging()
 
 
 # ------------------------------------------------------------
@@ -40,6 +45,9 @@ else:
 
 # FastAPI debug mode ကို settings.DEBUG အတိုင်း သုံးသည် (hardcode မလုပ်ရ)
 app.debug = settings.DEBUG
+
+# Register custom AppException handler
+register_exception_handlers(app)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

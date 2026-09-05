@@ -1,0 +1,1 @@
+"""Shared infrastructure code used across feature modules."""

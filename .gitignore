@@ -20,4 +20,4 @@ venv/
 htmlcov/
 
 # Alembic
-alembic/render.yaml
+migrations/render.yaml
