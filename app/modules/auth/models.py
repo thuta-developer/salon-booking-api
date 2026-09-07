@@ -82,7 +82,7 @@ class Role(BaseModel):
 
     permissions: Mapped[List[Permission]] = relationship(
         secondary=role_permissions,
-        lazy="selectin",
+        lazy="raise_on_sql",
     )
 
 

@@ -12,9 +12,10 @@ from app.core.config import settings
 
 # Import all ORM models so their tables are registered on Base.metadata
 # (needed for Alembic autogenerate).
-from app.core.database import Base
-import app.modules.auth.models  # noqa: F401  (RBAC: roles, permissions, assoc tables)
-import app.modules.users.models  # noqa: F401  (users, shops)
+from app.core.database import BaseModel, Base
+from app.modules.auth.models import Role, Permission, user_roles  # noqa: F401
+from app.modules.users.models import User  # noqa: F401
+from app.modules.shop.models import Shop
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

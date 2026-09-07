@@ -43,16 +43,21 @@ class BaseModel(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}(id={self.id})>"
+        object_id = self.__dict__.get("id", "<expired>")
+        return f"<{self.__class__.__name__}(id={object_id})>"
+
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    # echo ကို engine အဆင့်မှာ မသုံးတော့ပါ — raw SQL ကို သန့်သန့်ရှင်းရှင်းပြရန်
+    # `sqlalchemy.engine` logger ကို app/core/logging.py တွင် ထိန်းချုပ်ထားသည်
+    # (DEBUG mode တွင် SQL စာကြောင်းသက်သက်သာ ပေါ်ပါမည်)
+    echo=False,
     future=True,
     pool_size=20,
     max_overflow=10,
     pool_pre_ping=True,
-    pool_recycle=3600
+    pool_recycle=3600,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -64,6 +69,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 async_session_factory = AsyncSessionLocal
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:

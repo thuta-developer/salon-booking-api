@@ -1,8 +1,9 @@
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.exceptions import ResponseValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import router as v1_router
@@ -104,3 +105,11 @@ async def health():
     return JSONResponse(
         status_code=status.HTTP_200_OK, content={"status": "healthy"}
     )
+
+
+
+@app.exception_handler(ResponseValidationError)
+async def validation_exception_handler(request: Request, exc: ResponseValidationError):
+    print("=== USER RESPONSE ERROR DEBUGS ===")
+    print(exc.errors())  # Terminal ထဲတွင် Validation ကျနေသည့် Field အတိအကျ ထွက်လာပါမည်
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})

@@ -1,4 +1,6 @@
+# app/common/utils.py
 """Small shared utility helpers."""
+
 import re
 
 

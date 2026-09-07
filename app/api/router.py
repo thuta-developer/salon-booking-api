@@ -4,8 +4,14 @@ from fastapi import APIRouter
 from app.core.config import settings
 from app.modules.auth.router import router as auth_router
 from app.modules.users.router import router as users_router
+from app.modules.shop.router import router as shops_router
+from app.modules.shop.router import owner_router as shops_owner_router
+from app.modules.shop.router import admin_router as shops_admin_router
 
 router = APIRouter(prefix=settings.API_V1_STR)
 
 router.include_router(auth_router)
 router.include_router(users_router)
+router.include_router(shops_router)
+router.include_router(shops_owner_router)
+router.include_router(shops_admin_router)

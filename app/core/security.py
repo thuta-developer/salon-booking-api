@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 import bcrypt
 from jose import JWTError, jwt
@@ -38,7 +38,7 @@ _DUMMY_PASSWORD = "dummy-password-for-timing-attack"
 DUMMY_BCRYPT_HASH = get_password_hash(_DUMMY_PASSWORD)
 
 
-def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: Any, roles: List[str], expires_delta: Optional[timedelta] = None) -> str:
     """
     Access Token ထုတ်ပေးသည့် Function (Default Expiration Time: 60 min)
     """
@@ -52,13 +52,14 @@ def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None)
         "iat": datetime.now(timezone.utc),  # Issued-At — token ထုတ်ချိန် မှတ်တမ်း
         "sub": str(subject),
         "type": "access",
+        "roles": roles,
         "jti": str(uuid.uuid4()),  # JWT ID - logout/revocation အတွက် လိုအပ်သည်
     }
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
-def create_refresh_token(subject: Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_refresh_token(subject: Any, roles: Optional[List[str]] = None, expires_delta: Optional[timedelta] = None) -> str:
     """
     Refresh Token ထုတ်ပေးသည့် Function (Default Expiration Time: 7 days)
     """
@@ -72,6 +73,7 @@ def create_refresh_token(subject: Any, expires_delta: Optional[timedelta] = None
         "iat": datetime.now(timezone.utc),  # Issued-At — token ထုတ်ချိန် မှတ်တမ်း
         "sub": str(subject),
         "type": "refresh",
+        "roles": roles,
         "jti": str(uuid.uuid4()),  # JWT ID - logout/revocation အတွက် လိုအပ်သည်
     }
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

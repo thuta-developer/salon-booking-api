@@ -1,10 +1,4 @@
-"""Auth module services — authentication flows + RBAC management.
-
-Contains:
-    * AuthService         — register / login / refresh (token lifecycle)
-    * RoleService         — role CRUD, permission assignment, caching
-    * PermissionService   — permission CRUD
-"""
+"""Auth module services — authentication flows + RBAC management."""
 import math
 import uuid
 from datetime import datetime, timezone
@@ -16,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
+from app.common.dependencies import invalidate_user_auth_cache
 from app.common.pagination import PaginatedResponse
 from app.core.config import settings
 from app.core.redis_client import get_redis_client
@@ -46,9 +41,6 @@ from app.modules.users.schemas import UserCreate, UserResponse
 DEFAULT_REGISTER_ROLE = "Customer"
 
 
-# ==================================================================
-# AUTH SERVICE
-# ==================================================================
 class AuthService:
     """Handles the authentication lifecycle (register, login, refresh)."""
 
@@ -56,12 +48,7 @@ class AuthService:
         self.user_repository = user_repository
         self.db = user_repository.db
 
-    # ------------------------------------------------------------------
-    # Login brute-force protection helpers (Redis backed, fail-open on error)
-    # ------------------------------------------------------------------
     def _attempts_key(self, email: str, client_ip: str = "") -> str:
-        # IP + email ပေါင်း key — attacker က victim ၏ account ကို ရည်ရွယ်ချက်ရှိရှိ
-        # lock လုပ်ရန် (lockout DoS) မလွယ်စေရန်
         return f"login-attempt:{email.lower()}:{client_ip or 'unknown'}"
 
     async def _is_login_locked(self, email: str, client_ip: str = "") -> bool:
@@ -89,9 +76,6 @@ class AuthService:
         except Exception:
             return None
 
-    # ------------------------------------------------------------------
-    # Registration
-    # ------------------------------------------------------------------
     async def register_user(self, user_in: UserCreate) -> UserResponse:
         if user_in.password != user_in.confirm_password:
             raise HTTPException(
@@ -131,8 +115,6 @@ class AuthService:
             user.roles.append(customer_role)
         self.db.add(user)
 
-        # Concurrent registration အတွက် unique constraint violation ကို
-        # clean 400 အဖြစ် ပြန်ပေးရန် (500 crash မဖြစ်စေရန်)
         try:
             await self.db.commit()
         except IntegrityError:
@@ -161,9 +143,6 @@ class AuthService:
 
         return UserResponse(**response_dict)
 
-    # ------------------------------------------------------------------
-    # Login & token refresh
-    # ------------------------------------------------------------------
     async def login_user(
         self,
         email: str,
@@ -181,8 +160,6 @@ class AuthService:
 
         user = await self.user_repository.get_by_email(email)
 
-        # Timing Attack (User Enumeration) ကာကွယ်ရန် user မရှိလျှင်လည်း
-        # dummy hash ကို အမြဲ verify လုပ်သည်။
         hash_to_check = user.hashed_password if user else DUMMY_BCRYPT_HASH
         password_ok = verify_password(password, hash_to_check)
 
@@ -205,10 +182,11 @@ class AuthService:
         user.last_login = datetime.now(timezone.utc)
         await self.db.commit()
 
-        access_token = create_access_token(subject=user.id)
-        refresh_token = create_refresh_token(subject=user.id)
+        role_names = [role.name for role in user.roles] if user.roles else []
+        access_token = create_access_token(subject=user.id, roles=role_names)
+        refresh_token = create_refresh_token(subject=user.id, roles=role_names)
 
-        return Token(access_token=access_token, refresh_token=refresh_token)
+        return Token(access_token=access_token, refresh_token=refresh_token, roles=role_names)
 
     async def refresh_access_token(self, refresh_token: str) -> Dict[str, str]:
         payload = decode_token(refresh_token)
@@ -257,13 +235,8 @@ class AuthService:
         }
 
 
-# ==================================================================
-# ROLE SERVICE (RBAC)
-# ==================================================================
-# System အတွက် မရှိမဖြစ် roles — ဒါတွေကို delete/rename လုပ်ခွင့်မပြုပါ
 SYSTEM_ROLES = {"Super Admin", "Customer"}
-
-CACHE_TTL = 3600  # 1 hour
+CACHE_TTL = 3600
 
 
 class RoleService:
@@ -274,9 +247,6 @@ class RoleService:
         self.user_repo = UserRepository(db)
         self.redis = get_redis_client()
 
-    # --------------------------------------------------------------------------
-    # Cache Helper Methods
-    # --------------------------------------------------------------------------
     async def _invalidate_role_caches(self, role_id: Optional[uuid.UUID] = None):
         keys_to_delete = []
         if role_id:
@@ -290,7 +260,6 @@ class RoleService:
 
     async def create_role(self, role_in: RoleCreate) -> RoleResponse:
         role_data = role_in.model_dump()
-        # Leading/trailing whitespace + case-insensitive duplicate ကာကွယ်ရန်
         role_data["name"] = role_data["name"].strip()
         if not role_data["name"]:
             raise HTTPException(
@@ -305,8 +274,6 @@ class RoleService:
             )
 
         permission_ids = role_data.pop("permission_ids", [])
-
-        # Role Entity အသစ်တည်ဆောက်ခြင်း
         role = Role(**role_data)
 
         if permission_ids:
@@ -329,24 +296,19 @@ class RoleService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Role '{role_in.name}' already exists",
             )
-        await self.db.refresh(
-            role, attribute_names=["permissions"]
-        )  # Eager Load ဆက်လက်ထိန်းထားနိုင်ရန်
-
+        await self.db.refresh(role, attribute_names=["permissions"])
         await self._invalidate_role_caches()
         return RoleResponse.model_validate(role)
 
     async def get_roles_list(
         self, search: Optional[str], page: int, size: int
     ) -> PaginatedResponse[RoleResponse]:
-        # Cache Key တည်ဆောက်ခြင်း
         cache_key = f"roles:list:{search or 'all'}:{page}:{size}"
         cached_data = await self.redis.get(cache_key)
 
         if cached_data:
             return PaginatedResponse[RoleResponse].model_validate_json(cached_data)
 
-        # Cache Miss ဖြစ်ပါက Database မှ ဆွဲယူမည်
         roles, total = await self.role_repo.get_paginated_roles(
             search=search, page=page, size=size
         )
@@ -357,7 +319,6 @@ class RoleService:
             items=items, total=total, page=page, size=size, total_pages=total_pages
         )
 
-        # Redis တွင် သိမ်းဆည်းခြင်း
         await self.redis.set(cache_key, response.model_dump_json(), ex=CACHE_TTL)
         return response
 
@@ -376,7 +337,6 @@ class RoleService:
 
         role_response = RoleResponse.model_validate(role)
         await self.redis.set(cache_key, role_response.model_dump_json(), ex=CACHE_TTL)
-
         return role_response
 
     async def assign_permissions_to_role(
@@ -398,9 +358,7 @@ class RoleService:
         updated_role = await self.role_repo.update_role_permissions(role, permissions)
         response = RoleResponse.model_validate(updated_role)
 
-        # Role state ပြောင်းသွားသဖြင့် သက်ဆိုင်ရာ Cache များကို ဖျက်မည်
         await self._invalidate_role_caches(role_id=role_id)
-
         return response
 
     async def assign_roles_to_user(
@@ -439,6 +397,9 @@ class RoleService:
         await self.db.commit()
         await self.db.refresh(user, attribute_names=["roles"])
 
+        # Role ပြောင်းသွားသော User ၏ Auth Cache အား ဖျက်ပေးမည်
+        await invalidate_user_auth_cache(user_id)
+
         return UserResponse.model_validate(user)
 
     async def delete_role(self, role_id: uuid.UUID) -> dict:
@@ -455,23 +416,16 @@ class RoleService:
             )
 
         await self.role_repo.delete(role_id)
-
-        # Cache Invalidation ပြုလုပ်ခြင်း
         await self._invalidate_role_caches(role_id=role_id)
-
         return {"message": "Role deleted successfully"}
 
 
-# ==================================================================
-# PERMISSION SERVICE (RBAC)
-# ==================================================================
 class PermissionService:
     def __init__(self, db: AsyncSession):
         self.perm_repo = PermissionRepository(db)
 
     async def create_permission(self, perm_in: PermissionCreate) -> PermissionResponse:
         perm_data = perm_in.model_dump()
-        # Leading/trailing whitespace + case-insensitive duplicate ကာကွယ်ရန်
         perm_data["name"] = perm_data["name"].strip()
         if not perm_data["name"]:
             raise HTTPException(

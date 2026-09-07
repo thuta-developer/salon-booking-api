@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, noload, selectinload
 
 from app.common.repository import BaseRepository
 from app.modules.auth.models import Role
@@ -15,6 +15,8 @@ from app.modules.users.models import User
 class UserRepository(BaseRepository[User]):
     def __init__(self, db: AsyncSession):
         super().__init__(User, db)
+
+
 
     async def get_by_email(self, email: str) -> Optional[User]:
         stmt = (
@@ -37,9 +39,6 @@ class UserRepository(BaseRepository[User]):
     async def exists_by_email_or_phone(
         self, email: str, phone_number: Optional[str]
     ) -> bool:
-        # CRITICAL: phone_number=None ဖြစ်လျှင် `OR phone_number IS NULL` မဖြစ်စေရန်
-        # email အတွက်သာ စစ်သည်။ (Original code က NULL phone ရှိသော user ရှိသလောက်
-        #  register အကုန် "Phone number already exists" ဟု မှားယွင်းစွာ return လုပ်)
         if phone_number:
             stmt = select(func.count(User.id)).where(
                 or_(User.email == email, User.phone_number == phone_number)
@@ -91,19 +90,20 @@ class UserRepository(BaseRepository[User]):
         total_result = await self.db.execute(count_stmt)
         total = total_result.scalar_one()
 
+        # Roles သာ Load လုပ်မည်၊ Role.permissions နှင့် User.shops ကို noload သုံးမည်
         query = select(User).options(
-            selectinload(User.roles).noload(Role.permissions)
+            selectinload(User.roles).noload(Role.permissions),
+            noload(User.shops),
         )
 
         if filters:
             query = query.where(*filters)
 
-        # Pagination Offset
         offset = (page - 1) * size
         query = query.order_by(User.created_at.desc()).offset(offset).limit(size)
 
         result = await self.db.execute(query)
-        users = result.scalars().all()
+        users = result.scalars().unique().all()
 
         return list(users), total
 

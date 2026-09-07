@@ -1,8 +1,5 @@
-"""Users module service — user account management (CRUD).
+"""Users module service — user account management (CRUD)."""
 
-Authentication flows (register / login / refresh) live in
-``app.modules.auth.service.AuthService``.
-"""
 import math
 import uuid
 from datetime import datetime, timezone
@@ -13,8 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
+from app.common.dependencies import invalidate_user_auth_cache
 from app.common.pagination import PaginatedResponse
 from app.common.service import BaseService
+from app.modules.auth.models import Role
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserResponse, UserUpdate
@@ -34,7 +33,7 @@ class UserService(BaseService[User, UserRepository]):
     async def get_user_with_roles_by_id(self, user_id: uuid.UUID) -> User:
         stmt = (
             select(User)
-            .options(selectinload(User.roles))
+            .options(selectinload(User.roles).selectinload(Role.permissions))
             .where(User.id == user_id)
         )
         result = await self.db.execute(stmt)
@@ -93,11 +92,7 @@ class UserService(BaseService[User, UserRepository]):
         user_in: UserUpdate,
         acting_user: Optional[User] = None,
     ) -> UserResponse:
-        stmt = (
-            select(User)
-            .options(selectinload(User.roles))
-            .where(User.id == user_id)
-        )
+        stmt = select(User).options(selectinload(User.roles)).where(User.id == user_id)
         result = await self.db.execute(stmt)
         user = result.scalar_one_or_none()
         if not user:
@@ -105,7 +100,6 @@ class UserService(BaseService[User, UserRepository]):
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        # ---- Authorization Guards ----
         update_data = user_in.model_dump(exclude_unset=True)
 
         if acting_user is not None:
@@ -114,8 +108,6 @@ class UserService(BaseService[User, UserRepository]):
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You are not allowed to modify a superuser account",
                 )
-            # Privilege escalation ကာကွယ်ရန် — non-superuser က account_type /
-            # is_verified (email verify bypass / staff promotion) ကို မပြောင်းနိုင်ပါ
             if not acting_user.is_superuser:
                 privileged_fields = {"is_verified", "account_type"}
                 if privileged_fields & update_data.keys():
@@ -139,6 +131,8 @@ class UserService(BaseService[User, UserRepository]):
         self.db.add(user)
         try:
             await self.db.commit()
+            # User profile/status ပြောင်းသွား၍ Auth Cache ကို ဖျက်ပေးမည်
+            await invalidate_user_auth_cache(user.id)
         except IntegrityError:
             await self.db.rollback()
             raise HTTPException(
@@ -166,7 +160,6 @@ class UserService(BaseService[User, UserRepository]):
     async def _guard_target_user(
         self, target: User, acting_user: Optional[User], action: str
     ) -> None:
-        """Deletion/deactivation များတွင် superuser နှင့် self ကို ကာကွယ်ပေးသည်"""
         if acting_user is None:
             return
         if acting_user.id == target.id:
@@ -190,6 +183,7 @@ class UserService(BaseService[User, UserRepository]):
             )
         await self._guard_target_user(user, acting_user, "delete")
         await self.user_repository.hard_delete(user_id)
+        await invalidate_user_auth_cache(user_id)
         return {"message": "User hard deleted successfully"}
 
     async def soft_delete_user(
@@ -202,4 +196,5 @@ class UserService(BaseService[User, UserRepository]):
             )
         await self._guard_target_user(user, acting_user, "deactivate")
         await self.user_repository.soft_delete(user_id)
+        await invalidate_user_auth_cache(user_id)
         return {"message": "User soft deleted successfully"}

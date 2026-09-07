@@ -35,6 +35,19 @@ CRUD_RESOURCES = [
     "shop",
 ]
 
+# Admin management အတွက် Custom Specific Permissions များ
+CUSTOM_PERMISSIONS = [
+    {
+        "name": "shops:manage_status",
+        "description": "Can activate or deactivate shop status",
+        "module": "Shop",
+    },
+    {
+        "name": "shops:manage_verification",
+        "description": "Can verify or unverify shop status",
+        "module": "Shop",
+    },
+]
 
 def build_permissions() -> List[Dict[str, str]]:
     """Generate resource permission pairs dynamically."""
@@ -46,6 +59,8 @@ def build_permissions() -> List[Dict[str, str]]:
                 "description": f"Can {action} {resource}",
                 "module": resource.capitalize(),
             })
+
+    perms.extend(CUSTOM_PERMISSIONS)
     return perms
 
 
@@ -59,9 +74,19 @@ DEFAULT_ROLES = {
         "description": "Full access to all modules and configurations",
         "permissions": "*",  # All permissions
     },
+    "Shop Owner": {
+        "description": "Shop management and operations",
+        "permissions": [
+            "shop:create",
+            "shop:read",
+            "shop:update",
+        ],
+    },
     "Customer": {
         "description": "Standard user",
-        "permissions": [],
+        "permissions": [
+            "shop:read",
+        ],
     },
 }
 
@@ -84,7 +109,11 @@ async def seed_rbac(sync_stale_roles: bool = False):
         for perm_data in PERMISSIONS:
             name = perm_data["name"]
             if name in existing_perms:
-                perm_objects[name] = existing_perms[name]
+                # နေရာ/Description များ ပြောင်းလဲပါက Sync အလိုအလျောက် လုပ်ပေးမည်
+                perm = existing_perms[name]
+                perm.description = perm_data["description"]
+                perm.module = perm_data["module"]
+                perm_objects[name] = perm
             else:
                 new_perm = Permission(**perm_data)
                 session.add(new_perm)
@@ -97,7 +126,9 @@ async def seed_rbac(sync_stale_roles: bool = False):
         if sync_stale_roles:
             active_role_names = list(DEFAULT_ROLES.keys())
             stale_roles_res = await session.execute(
-                select(Role).options(selectinload(Role.permissions)).where(Role.name.not_in(active_role_names))
+                select(Role)
+                .options(selectinload(Role.permissions))
+                .where(Role.name.not_in(active_role_names))
             )
             stale_roles = stale_roles_res.scalars().all()
 
@@ -134,8 +165,7 @@ async def seed_rbac(sync_stale_roles: bool = False):
 
         await session.commit()
         logger.info("RBAC Seeding Complete!")
-
-
+        
 
 # ==========================================
 # 4. DYNAMIC SUPER ADMIN CREATION LOGIC
