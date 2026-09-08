@@ -1,18 +1,28 @@
-import uuid
-from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+"""ShopBarber module ORM models — barbers working ata shop.
 
-from sqlalchemy import Boolean, ForeignKey, Index, Numeric, String, Text, DateTime, UniqueConstraint
+``ShopBarber.shop`` → ``Shop`` and ``ShopBarber.barber`` → ``User``.  Both are
+imported at the bottom of this module (safe mild circular) so mapper
+configuration resolves regardless of which model module is imported first.
+"""
+import uuid
 from datetime import datetime
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseModel
-
-if TYPE_CHECKING:
-    from app.modules.users.models import User
-    from app.modules.shop.models import Shop
-
 
 class ShopBarber(BaseModel):
     __tablename__ = "shop_barbers"
@@ -57,6 +67,12 @@ class ShopBarber(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ShopBarber {self.display_name} (Shop: {self.shop_id})>"
+
+
+# Register dependent models (safe mild circular imports at bottom of module) —
+# see shop/models.py note for the same pattern.
+from app.modules.shop import models as _shop_models_registry  # noqa: E402,F401
+from app.modules.users import models as _user_models_registry  # noqa: E402,F401
 
 
 __all__ = ["ShopBarber"]

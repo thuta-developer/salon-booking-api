@@ -1,15 +1,21 @@
+"""Users module ORM models — User.
+
+``User.shops`` references ``Shop`` (app.modules.shop) and
+``User.barber_profiles`` references ``ShopBarber`` (app.modules.shop_barbers).
+Both are imported at runtime so they are ALWAYS registered in SQLAlchemy's
+mapper registry before ``User``'s mapper is configured.
+"""
 import uuid
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 
 from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseModel
 from app.modules.auth.models import Role, user_roles
-from app.modules.shop.models import Shop 
-if TYPE_CHECKING:
-    from app.modules.shop_barbers.models import ShopBarber
+from app.modules.shop.models import Shop  # noqa: F401
+from app.modules.shop_barbers.models import ShopBarber  # noqa: F401
 
 class User(BaseModel):
     __tablename__ = "users"
@@ -42,13 +48,13 @@ class User(BaseModel):
         secondary=user_roles,
         lazy="raise_on_sql",
     )
-    shops: Mapped[List["Shop"]] = relationship(
-        "Shop",
+    shops: Mapped[List[Shop]] = relationship(
+        Shop,
         back_populates="owner",
         lazy="raise_on_sql",
     )
-    barber_profiles: Mapped[List["ShopBarber"]] = relationship(
-        "ShopBarber",
+    barber_profiles: Mapped[List[ShopBarber]] = relationship(
+        ShopBarber,
         back_populates="barber",
         lazy="raise_on_sql",
     )

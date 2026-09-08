@@ -1,6 +1,12 @@
+"""Shop module ORM models — Shop.
+
+``Shop.owner`` → ``User`` and ``Shop.barbers`` → ``ShopBarber``.  Dependent
+model modules are imported at the bottom (safe, since they use a similar
+pattern) so mapper configuration always resolves regardless of import order.
+"""
 import uuid
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional, List
+from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -14,11 +20,6 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseModel
-
-if TYPE_CHECKING:
-    from app.modules.users.models import User
-    from app.modules.shop_barbers.models import ShopBarber
-
 
 class Shop(BaseModel):
     __tablename__ = "shops"
@@ -53,7 +54,6 @@ class Shop(BaseModel):
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    
 
     # Relationships
     owner: Mapped["User"] = relationship(
@@ -67,6 +67,12 @@ class Shop(BaseModel):
         cascade="all, delete-orphan",
         lazy="raise_on_sql",
     )
+    categories: Mapped[List["ServiceCategory"]] = relationship(
+        "ServiceCategory",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+        lazy="raise_on_sql",
+    )
 
     __table_args__ = (
         Index("ix_shops_city_country", "city", "country"),
@@ -75,6 +81,13 @@ class Shop(BaseModel):
 
     def __repr__(self) -> str:
         return f"<Shop {self.name} ({self.id})>"
+
+
+# Register dependent models so mapper configuration works even when this
+# module is imported first (safe: only fetches module objects).
+from app.modules.users import models as _user_models_registry  # noqa: E402,F401
+from app.modules.shop_barbers import models as _shop_barbers_models_registry  # noqa: E402,F401
+from app.modules.categories import models as _categories_models_registry
 
 
 __all__ = ["Shop"]
