@@ -10,6 +10,8 @@ from app.modules.shop.router import admin_router as shops_admin_router
 from app.modules.shop_barbers.router import router as barbers_router
 from app.modules.categories.router import public_router as categories_router
 from app.modules.categories.router import owner_router as categories_owner_router
+from app.modules.services.router import public_router as services_router
+from app.modules.services.router import owner_router as services_owner_router
 
 router = APIRouter(prefix=settings.API_V1_STR)
 
@@ -21,3 +23,5 @@ router.include_router(shops_admin_router)
 router.include_router(barbers_router)
 router.include_router(categories_router)
 router.include_router(categories_owner_router)
+router.include_router(services_router)
+router.include_router(services_owner_router)

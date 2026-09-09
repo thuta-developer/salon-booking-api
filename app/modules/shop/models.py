@@ -73,6 +73,9 @@ class Shop(BaseModel):
         cascade="all, delete-orphan",
         lazy="raise_on_sql",
     )
+    services: Mapped[List["Service"]] = relationship(
+        "Service", back_populates="shop", cascade="all, delete-orphan", lazy="raise_on_sql"
+    )
 
     __table_args__ = (
         Index("ix_shops_city_country", "city", "country"),
@@ -87,7 +90,8 @@ class Shop(BaseModel):
 # module is imported first (safe: only fetches module objects).
 from app.modules.users import models as _user_models_registry  # noqa: E402,F401
 from app.modules.shop_barbers import models as _shop_barbers_models_registry  # noqa: E402,F401
-from app.modules.categories import models as _categories_models_registry
+from app.modules.categories import models as _categories_models_registry  # noqa: E402,F401
+from app.modules.services import models as _services_models_registry  # noqa: E402,F401
 
 
 __all__ = ["Shop"]

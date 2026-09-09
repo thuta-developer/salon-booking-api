@@ -18,6 +18,7 @@ from app.modules.users.models import User  # noqa: F401
 from app.modules.shop.models import Shop
 from app.modules.shop_barbers.models import ShopBarber
 from app.modules.categories.models import ServiceCategory
+from app.modules.services.models import Service
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
