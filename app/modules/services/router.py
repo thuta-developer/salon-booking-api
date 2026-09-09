@@ -33,10 +33,11 @@ def get_service_service(db: AsyncSession = Depends(get_db)):
 async def list_public_services(
     shop_id: uuid.UUID,
     category_id: Optional[uuid.UUID] = Query(None, description="Category id filter"),
+    is_active: Optional[bool] = Query(None, description="Is active filter"),
     service: ServiceService = Depends(get_service_service),
 ):
     """Public: Shop တစ်ခု၏ Active ဖြစ်သော Service များကို Category Filter ပါဝင်စွာ ကြည့်ရှုခြင်း"""
-    return await service.get_public_services(shop_id=shop_id, category_id=category_id)
+    return await service.get_public_services(shop_id=shop_id, category_id=category_id, is_active=is_active)
 
 
 @public_router.get(

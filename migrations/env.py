@@ -19,6 +19,7 @@ from app.modules.shop.models import Shop
 from app.modules.shop_barbers.models import ShopBarber
 from app.modules.categories.models import ServiceCategory
 from app.modules.services.models import Service
+from app.modules.barber_services.models import BarberService
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

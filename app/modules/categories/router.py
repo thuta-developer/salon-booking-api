@@ -1,6 +1,5 @@
 import uuid
-from typing import List
-
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,10 +32,11 @@ def get_category_service(db: AsyncSession = Depends(get_db)) -> ServiceCategoryS
 )
 async def list_public_categories(
     shop_id: uuid.UUID,
+    is_active: Optional[bool] = Query(True, description="Filter by active status"),
     service: ServiceCategoryService = Depends(get_category_service),
 ):
     """Public: Active ဖြစ်သော Category များ စာရင်းကို ကြည့်ရှုခြင်း"""
-    return await service.get_public_categories(shop_id=shop_id)
+    return await service.get_public_categories(shop_id=shop_id, is_active=is_active)
 
 @public_router.get(
     "/{shop_id}/categories/{category_id}",

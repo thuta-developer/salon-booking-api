@@ -1,13 +1,14 @@
-"""ShopBarber module ORM models — barbers working ata shop.
+"""ShopBarber module ORM models — barbers working at a shop.
 
-``ShopBarber.shop`` → ``Shop`` and ``ShopBarber.barber`` → ``User``.  Both are
-imported at the bottom of this module (safe mild circular) so mapper
-configuration resolves regardless of which model module is imported first.
+``ShopBarber.shop`` → ``Shop`` and ``ShopBarber.barber`` → ``User``;
+``ShopBarber.barber_services`` → ``BarberService`` (app.modules.barber_services).
+All dependent models are imported at the bottom of this module (safe mild
+circular) so mapper configuration resolves regardless of import order.
 """
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -59,6 +60,12 @@ class ShopBarber(BaseModel):
         "User",
         lazy="raise_on_sql",
     )
+    barber_services: Mapped[List["BarberService"]] = relationship(
+        "BarberService",
+        back_populates="barber",
+        cascade="all, delete-orphan",
+        lazy="raise_on_sql",
+    )
 
     __table_args__ = (
         UniqueConstraint("shop_id", "barber_id", name="uq_shop_barber"),
@@ -73,6 +80,7 @@ class ShopBarber(BaseModel):
 # see shop/models.py note for the same pattern.
 from app.modules.shop import models as _shop_models_registry  # noqa: E402,F401
 from app.modules.users import models as _user_models_registry  # noqa: E402,F401
+from app.modules.barber_services import models as _barber_services_models_registry  # noqa: E402,F401
 
 
 __all__ = ["ShopBarber"]

@@ -44,10 +44,10 @@ class ServiceService(BaseService[Service, ServiceRepository]):
     # ==========================================
 
     async def get_public_services(
-        self , shop_id: uuid.UUID, category_id: Optional[uuid.UUID] = None
+        self , shop_id: uuid.UUID, category_id: Optional[uuid.UUID] = None, is_active: Optional[bool] = None
     ) -> List[ServiceDetailResponse]:
         services = await self.repository.get_by_shop(
-            shop_id=shop_id, category_id=category_id, is_active=True
+            shop_id=shop_id, category_id=category_id, is_active=is_active
         )
         return [ServiceDetailResponse.model_validate(s) for s in services]
 

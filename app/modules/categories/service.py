@@ -40,8 +40,8 @@ class ServiceCategoryService(BaseService[ServiceCategory, ServiceCategoryReposit
     # PUBLIC METHODS
     # ==========================================
 
-    async def get_public_categories(self, shop_id: uuid.UUID) -> List[ServiceCategoryResponse]:
-        categories = await self.repository.get_by_shop(shop_id=shop_id, is_active=True)
+    async def get_public_categories(self, shop_id: uuid.UUID, is_active: Optional[bool]) -> List[ServiceCategoryResponse]:
+        categories = await self.repository.get_by_shop(shop_id=shop_id, is_active=is_active)
         return [ServiceCategoryResponse.model_validate(c) for c in categories]
 
     async def get_public_category_detail(self, shop_id: uuid.UUID, category_id: uuid.UUID) -> ServiceCategoryResponse:

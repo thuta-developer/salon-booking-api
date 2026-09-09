@@ -65,6 +65,13 @@ class Service(BaseModel):
         lazy="raise_on_sql",
     )
 
+    barber_services: Mapped[list["BarberService"]] = relationship(
+        "BarberService",
+        back_populates="service",
+        lazy="raise_on_sql",
+        cascade="all, delete-orphan",
+    )
+
     __table_args__ = (
         UniqueConstraint("shop_id", "name", name="uq_shop_service_name"),
         Index("ix_services_shop_category", "shop_id", "category_id"),
@@ -79,6 +86,7 @@ class Service(BaseModel):
 # the mappers and avoids the services ↔ categories circular import.
 from app.modules.shop import models as _shop_models_registry  # noqa: E402,F401
 from app.modules.categories import models as _categories_models_registry  # noqa: E402,F401
+from app.modules.barber_services import models as _barber_services_models_registry 
 
 
 __all__ = ["Service"]
