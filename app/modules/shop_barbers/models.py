@@ -56,6 +56,13 @@ class ShopBarber(BaseModel):
         cascade="all, delete-orphan",
         lazy="raise_on_sql",
     )
+    working_hours: Mapped[List["BarberWorkingHour"]] = relationship(
+        "BarberWorkingHour",
+        back_populates="barber",
+        cascade="all, delete-orphan",
+        lazy="raise_on_sql",
+    )
+
 
     __table_args__ = (
         UniqueConstraint("shop_id", "display_name", name="uq_shop_barber"),
@@ -63,6 +70,7 @@ class ShopBarber(BaseModel):
     )
 
     def __repr__(self) -> str:
+        
         return f"<ShopBarber {self.display_name} (Shop: {self.shop_id})>"
 
 
@@ -71,6 +79,7 @@ class ShopBarber(BaseModel):
 from app.modules.shop import models as _shop_models_registry  # noqa: E402,F401
 from app.modules.users import models as _user_models_registry  # noqa: E402,F401
 from app.modules.barber_services import models as _barber_services_models_registry  # noqa: E402,F401
+from app.modules.barber_working_hours import models as _barber_working_hours_models_registry  # noqa: E402,F401
 
 
 __all__ = ["ShopBarber"]
