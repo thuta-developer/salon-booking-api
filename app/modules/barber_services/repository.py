@@ -15,13 +15,26 @@ class BarberServiceRepository(BaseRepository[BarberService]):
     async def get_by_barber_and_service(
         self, shop_barber_id: uuid.UUID, service_id: uuid.UUID
     ) -> Optional[BarberService]:
-        """Barber ID နှင့် Service ID တူညီသော Record ကို ဆွဲထုတ်ခြင်း"""
+        """Barber တစ်ယောက်နှင့် Service တစ်ခု အတိအကျ တိုက်ဆိုင် record ရှိမရှိ ဆွဲထုတ်ခြင်း"""
         stmt = select(BarberService).where(
             BarberService.shop_barber_id == shop_barber_id,
             BarberService.service_id == service_id,
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_barber_and_services(
+        self, shop_barber_id: uuid.UUID, service_ids: List[uuid.UUID]
+    ) -> List[BarberService]:
+        """Barber ID နှင့် service_ids list ပါ ရှိပြီးသား records များကို Bulk query ရိုက်ခြင်း"""
+        if not service_ids:
+            return []
+        stmt = select(BarberService).where(
+            BarberService.shop_barber_id == shop_barber_id,
+            BarberService.service_id.in_(service_ids),
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
     async def get_services_by_barber(
         self, shop_barber_id: uuid.UUID, is_active: Optional[bool] = None,

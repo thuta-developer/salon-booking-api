@@ -83,10 +83,10 @@ class ServiceCategoryService(BaseService[ServiceCategory, ServiceCategoryReposit
             )
 
     async def get_owner_categories(
-        self, owner_id: uuid.UUID, shop_id: uuid.UUID
+        self, owner_id: uuid.UUID, shop_id: uuid.UUID, is_active: Optional[bool]
     ) -> List[ServiceCategoryResponse]:
         await self._verify_shop_ownership(shop_id, owner_id)
-        categories = await self.repository.get_by_shop(shop_id=shop_id, is_active=None)
+        categories = await self.repository.get_by_shop(shop_id=shop_id, is_active=is_active)
         return [ServiceCategoryResponse.model_validate(c) for c in categories]
 
     async def get_owner_category_detail(

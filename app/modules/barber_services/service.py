@@ -101,7 +101,11 @@ class BarberServiceService(BaseService[BarberService, BarberServiceRepository]):
         shop_barber_id: uuid.UUID,
         payload: BarberServiceBulkAssign,
     ) -> List[BarberServiceResponse]:
-        """Owner: Barber ထံသို့ Service များကို Assign/Link လုပ်ခြင်း (Bulk Support)"""
+        """Owner: Barber ထံသို့ Service များကို Bulk Assign ပြုလုပ်ခြင်း (Optimized Query)"""
+        if not payload.service_ids:
+            return []
+
+        # 1. Barber နှင့် Shop Ownership စစ်ဆေးခြင်း
         barber = await self.barber_repo.get_by_id(shop_barber_id)
         if not barber:
             raise HTTPException(
@@ -110,40 +114,53 @@ class BarberServiceService(BaseService[BarberService, BarberServiceRepository]):
 
         await self._verify_shop_ownership(barber.shop_id, owner_id)
 
-        assigned_records = []
-        for service_id in payload.service_ids:
-            # Service သည် ယင်း Shop အောက်တွင် ရှိမရှိ စစ်ဆေးခြင်း
-            srv = await self.service_repo.get_by_id(service_id)
-            if not srv or srv.shop_id != barber.shop_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Service ID {service_id} does not belong to this shop",
-                )
-
-            # Record ရှိပြီးသားလား စစ်ဆေးခြင်း
-            existing = await self.repository.get_by_barber_and_service(
-                shop_barber_id=shop_barber_id, service_id=service_id
+        # 2. ပို့လိုက်သော service_ids အားလုံး ယင်း Shop အောက်မှာ တကယ်ရှိမရှိ Query ၁ ခါတည်းဖြင့် စစ်ဆေးခြင်း
+        valid_services = await self.service_repo.get_by_ids_and_shop(
+            service_ids=payload.service_ids, shop_id=barber.shop_id
+        )
+        if len(valid_services) != len(set(payload.service_ids)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more services are invalid or do not belong to this shop",
             )
-            if existing:
-                if not existing.is_active:
-                    # Inactive ဖြစ်နေလျှင် ပြန် Re-activate လုပ်ခြင်း
-                    updated = await self.update(existing, {"is_active": True})
-                    await self.repository.db.refresh(updated)
-                    assigned_records.append(updated)
-                else:
-                    assigned_records.append(existing)
+
+        # 3. ရှိပြီးသား BarberServices များကို Query ၁ ခါတည်းဖြင့် ဆွဲထုတ်ခြင်း
+        existing_records = await self.repository.get_by_barber_and_services(
+            shop_barber_id=shop_barber_id, service_ids=payload.service_ids
+        )
+        existing_map = {r.service_id: r for r in existing_records}
+
+        assigned_records = []
+        new_objects = []
+
+        # 4. Inactive များကို Re-activate လုပ်ခြင်း နှင့် New Objects များ ပြင်ဆင်ခြင်း
+        for s_id in payload.service_ids:
+            if s_id in existing_map:
+                rec = existing_map[s_id]
+                if not rec.is_active:
+                    rec.is_active = True
+                assigned_records.append(rec)
             else:
-                # မရှိသေးလျှင် အသစ်ဖန်တီးခြင်း
-                created = await self.create({
-                    "shop_barber_id": shop_barber_id,
-                    "service_id": service_id,
-                    "is_active": True,
-                })
-                await self.repository.db.refresh(created)
-                assigned_records.append(created)
+                new_bs = BarberService(
+                    shop_barber_id=shop_barber_id,
+                    service_id=s_id,
+                    is_active=True,
+                )
+                new_objects.append(new_bs)
 
-        return [BarberServiceResponse.model_validate(r) for r in assigned_records]
+        # 5. DB ထဲသို့ Bulk Add & Flush လုပ်ခြင်း (Query အရေအတွက် သိသိသာသာ လျော့ကျသွားမည်)
+        if new_objects:
+            self.repository.db.add_all(new_objects)
 
+        await self.repository.db.flush()
+
+        for obj in new_objects + assigned_records:
+            await self.repository.db.refresh(obj)
+
+        result_list = new_objects + assigned_records
+        return [BarberServiceResponse.model_validate(r) for r in result_list]
+
+    
     async def remove_service_from_barber(
         self,
         owner_id: uuid.UUID,

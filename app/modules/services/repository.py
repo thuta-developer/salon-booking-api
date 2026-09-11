@@ -11,6 +11,19 @@ class ServiceRepository(BaseRepository[Service]):
     def __init__(self , db: AsyncSession):
         super().__init__(model=Service ,db=db)
 
+
+    async def get_by_ids_and_shop(
+        self, service_ids: List[uuid.UUID], shop_id: uuid.UUID,
+    ) -> List[Service]:
+        if not service_ids:
+            return []
+        stmt = select(Service).where(
+            Service.id.in_(service_ids),
+            Service.shop_id == shop_id,
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_shop_and_name(
         self, shop_id: uuid.UUID, name: str,
     ) -> Optional[Service]:
@@ -49,7 +62,7 @@ class ServiceRepository(BaseRepository[Service]):
         stmt = (
             select(Service)
             .options(selectinload(Service.category))
-            .where(Service.category_id == service_id)
+            .where(Service.id == service_id)
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()

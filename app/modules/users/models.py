@@ -1,9 +1,9 @@
 """Users module ORM models — User.
 
-``User.shops`` references ``Shop`` (app.modules.shop) and
-``User.barber_profiles`` references ``ShopBarber`` (app.modules.shop_barbers).
-Both are imported at runtime so they are ALWAYS registered in SQLAlchemy's
-mapper registry before ``User``'s mapper is configured.
+``User.shops`` references ``Shop`` (app.modules.shop). ``ShopBarber`` is
+imported at runtime to keep the mapper-registration chain complete, but there
+is NO User ↔ ShopBarber relationship (barbers are self-contained records —
+name/bio/image — and are not tied to a User account).
 """
 import uuid
 from datetime import datetime
@@ -51,11 +51,6 @@ class User(BaseModel):
     shops: Mapped[List[Shop]] = relationship(
         Shop,
         back_populates="owner",
-        lazy="raise_on_sql",
-    )
-    barber_profiles: Mapped[List[ShopBarber]] = relationship(
-        ShopBarber,
-        back_populates="barber",
         lazy="raise_on_sql",
     )
 

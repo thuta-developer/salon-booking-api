@@ -16,7 +16,7 @@ class BarberServiceCreate(BarberServiceBase):
 
 # Barber တစ်ယောက်တည်းမှာ Service အများအပြား တစ်ပြိုင်နက် Assign လုပ်လိုပါက သုံးနိုင်သော Schema
 class BarberServiceBulkAssign(BaseModel):
-    shop_barber_id: uuid.UUID
+    # shop_barber_id: uuid.UUID
     service_ids: List[uuid.UUID]
 
 

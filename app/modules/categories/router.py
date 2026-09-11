@@ -79,12 +79,13 @@ async def create_category(
 )
 async def list_owner_categories(
     shop_id: uuid.UUID,
+    is_active: Optional[bool] = Query(True, description="Filter by active status"),
     current_user: User = Depends(get_current_active_user),
     service: ServiceCategoryService = Depends(get_category_service),
 ):
     """Shop Owner: မိမိ Shop ၏ Category အားလုံး (Active/Inactive) ကို ကြည့်ရှုခြင်း"""
     return await service.get_owner_categories(
-        owner_id=current_user.id, shop_id=shop_id
+        owner_id=current_user.id, shop_id=shop_id, is_active=is_active
     )
 
 

@@ -17,7 +17,6 @@ from app.modules.shop_barbers.schemas import (
     ShopBarberUpdate,
 )
 from app.modules.shop.repository import ShopRepository
-from app.modules.users.repository import UserRepository
 
 
 class ShopBarberService(BaseService[ShopBarber, ShopBarberRepository]):
@@ -25,7 +24,6 @@ class ShopBarberService(BaseService[ShopBarber, ShopBarberRepository]):
         self.repository = ShopBarberRepository(db)
         super().__init__(repository=self.repository)
         self.shop_repo = ShopRepository(db)
-        self.user_repo = UserRepository(db)
 
     async def _verify_shop_ownership(
         self, shop_id: uuid.UUID, owner_id: uuid.UUID
@@ -47,29 +45,21 @@ class ShopBarberService(BaseService[ShopBarber, ShopBarberRepository]):
     ) -> ShopBarberResponse:
         await self._verify_shop_ownership(shop_id, owner_id)
 
-        # Barber User ရှိမရှိ စစ်ဆေးခြင်း
-        barber_user = await self.user_repo.get_by_id(barber_in.barber_id)
-        if not barber_user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Target barber user not found",
-            )
-
-        # Shop ထဲတွင် Barber ရှိနှင့်ပြီးသားလား စစ်ဆေးခြင်း
-        existing = await self.repository.get_by_shop_and_barber(
-            shop_id, barber_in.barber_id
+        # Shop ထဲတွင် တူညီသော Barber နာမည် ရှိနှင့်ပြီးသားလား စစ်ဆေးခြင်း
+        existing = await self.repository.get_by_shop_and_name(
+            shop_id, barber_in.display_name
         )
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This barber is already assigned to this shop",
+                detail="A barber with this name already exists in this shop",
             )
 
         create_data = {
             "shop_id": shop_id,
-            "barber_id": barber_in.barber_id,
-            "display_name": barber_in.display_name,
+            "display_name": barber_in.display_name.strip(),
             "bio": barber_in.bio,
+            "image": barber_in.image,
             "is_active": barber_in.is_active,
             "joined_at": barber_in.joined_at or datetime.now(timezone.utc),
         }
