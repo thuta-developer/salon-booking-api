@@ -14,6 +14,7 @@ from app.modules.services.router import public_router as services_router
 from app.modules.services.router import owner_router as services_owner_router
 from app.modules.barber_services.router import public_router as barber_services_router
 from app.modules.barber_services.router import owner_router as barber_owner_router
+from app.modules.business_hours.router import router as business_hours_router
 
 router = APIRouter(prefix=settings.API_V1_STR)
 
@@ -29,3 +30,4 @@ router.include_router(services_router)
 router.include_router(services_owner_router)
 router.include_router(barber_services_router)
 router.include_router(barber_owner_router)
+router.include_router(business_hours_router)
